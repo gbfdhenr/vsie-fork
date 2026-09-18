@@ -56,6 +56,12 @@ public class HudCrosshair {
             return;
         }
 
+        // Only run in first person view
+        if (!mc.options.getCameraType().isFirstPerson()) {
+            hoveredElement = null;
+            return;
+        }
+
         // Only run when riding a control seat
         if (!(player.getVehicle() instanceof ControlSeatMountEntity mountEntity)) {
             hoveredElement = null;

@@ -114,8 +114,10 @@ public class HudOverlay {
         // Function: heavy turret fire-vector markers stay on the screen overlay so they remain visible even when the player looks away from the seat HUD plane.
         drawHeavyTurretMarkers(gg, controlSeat, data, sw, sh, markerAlpha);
         drawVelocityVectorMarker(gg, data, sw, sh, markerAlpha);
-        // Function: center-screen crosshair for HUD element clicking
-        drawCrosshair(gg, sw, sh);
+        // Function: center-screen crosshair for HUD element clicking (first person only)
+        if (mc.options.getCameraType().isFirstPerson()) {
+            drawCrosshair(gg, sw, sh);
+        }
         RenderSystem.disableBlend();
         return;
     }
