@@ -319,53 +319,54 @@ public class ServerShipHandler {
         Vector3d finaltorque = new Vector3d(0,0,0);
         Vector3d finalforce  = new Vector3d(0,0,0);
         Vector3d nonAntiGravityLinearImpulse = new Vector3d(0,0,0);
-        boolean hasManualLinearInput = controlling && hasManualLinearInput(data.getForce(), data.getThrottle());
-
-        if (data.istorqueassiston) {
-            // Function: torque assist remains active during auto-level, so yaw damping is still preserved.
-            finaltorque.add(invtorque);
-        }
-        if (data.isforceassiston) {
-            finalforce.add(invforce);
-            nonAntiGravityLinearImpulse.add(invforce);
-        }
-        if (data.isantigravityon) {
-            Vector3d gravity = DimensionPhysicsData.getGravity(
-                    subLevel.getLevel(),
-                    subLevel.logicalPose().position(),
-                    new Vector3d()
-            );
-            AntiGravityController.Impulse antiGravityImpulse = AntiGravityController.calculateImpulse(
-                    gravity.x, gravity.y, gravity.z,
-                    velocity.x, velocity.y, velocity.z,
-                    finalforce.x, finalforce.y, finalforce.z,
-                    rawMass, timeStep, !hasManualLinearInput
-            );
-            // Function: match Sable's exact gravity impulse and hold its axis only while the pilot is not translating.
-            finalforce.add(antiGravityImpulse.x(), antiGravityImpulse.y(), antiGravityImpulse.z());
-        }
-        if (hasWorldControlAxes) {
-            Vec3 autoLevelImpulse = AutoLevelUtils.calculateWorldAngularImpulse(
-                    data,
-                    subLevel,
-                    momentOfInertia,
-                    omega,
-                    worldXDirection,
-                    worldYDirection,
-                    worldZDirection,
-                    rawAverageInertia,
-                    averageInertia,
-                    deltaOmegaScale
-            );
-            finaltorque.add(Vec.toVector3d(autoLevelImpulse));
-        }
-        // Function: anti-gravity is not a thruster demand, so keep it out of visual throttle and fuel budgeting.
-        Vector3d thrusterVisualForce = calculateVisualForceFromPhysicsForce(subLevel, nonAntiGravityLinearImpulse);
+        Vector3d thrusterVisualForce = new Vector3d(0,0,0);
 
         double torqueAlpha = smoothingAlpha(CONTROL_INPUT_RESPONSE, timeStep);
         double throttleAlpha = smoothingAlpha(THROTTLE_INPUT_RESPONSE, timeStep);
 
         if (controlling) {
+            boolean hasManualLinearInput = hasManualLinearInput(data.getForce(), data.getThrottle());
+
+            if (data.istorqueassiston) {
+                // Function: torque assist remains active during auto-level, so yaw damping is still preserved.
+                finaltorque.add(invtorque);
+            }
+            if (data.isforceassiston) {
+                finalforce.add(invforce);
+                nonAntiGravityLinearImpulse.add(invforce);
+            }
+            if (data.isantigravityon) {
+                Vector3d gravity = DimensionPhysicsData.getGravity(
+                        subLevel.getLevel(),
+                        subLevel.logicalPose().position(),
+                        new Vector3d()
+                );
+                AntiGravityController.Impulse antiGravityImpulse = AntiGravityController.calculateImpulse(
+                        gravity.x, gravity.y, gravity.z,
+                        velocity.x, velocity.y, velocity.z,
+                        finalforce.x, finalforce.y, finalforce.z,
+                        rawMass, timeStep, !hasManualLinearInput
+                );
+                // Function: match Sable's exact gravity impulse and hold its axis only while the pilot is not translating.
+                finalforce.add(antiGravityImpulse.x(), antiGravityImpulse.y(), antiGravityImpulse.z());
+            }
+            if (hasWorldControlAxes) {
+                Vec3 autoLevelImpulse = AutoLevelUtils.calculateWorldAngularImpulse(
+                        data,
+                        subLevel,
+                        momentOfInertia,
+                        omega,
+                        worldXDirection,
+                        worldYDirection,
+                        worldZDirection,
+                        rawAverageInertia,
+                        averageInertia,
+                        deltaOmegaScale
+                );
+                finaltorque.add(Vec.toVector3d(autoLevelImpulse));
+            }
+            // Function: anti-gravity is not a thruster demand, so keep it out of visual throttle and fuel budgeting.
+            thrusterVisualForce = calculateVisualForceFromPhysicsForce(subLevel, nonAntiGravityLinearImpulse);
             boolean warpRotationLocked = data.isWarpPreparing || data.hasPendingWarpTeleport;
             // Function: while warp is active, mouse torque must not rotate the ship; preparation uses auto-alignment only.
             Vec3 torque = warpRotationLocked ? Vec3.ZERO : data.getTorque();
@@ -440,7 +441,10 @@ public class ServerShipHandler {
             thrusterVisualForce.add(Vec.toVector3d(visualTranslationForce));
             //LogUtils.getLogger().warn("finaltorque:"+finaltorque+"inverttorque:"+invtorque+"origin:"+Invarianttorque);
         } else {
-            // Function: when the pilot leaves, keep assist damping active and only clear stale manual input.
+            // Function: no pilot = no assist forces, no manual input, no visual thrust.
+            finalforce.set(0, 0, 0);
+            finaltorque.set(0, 0, 0);
+            thrusterVisualForce.set(0, 0, 0);
             clearManualControlInput();
         }
         data.setFinaltorque(finaltorque);

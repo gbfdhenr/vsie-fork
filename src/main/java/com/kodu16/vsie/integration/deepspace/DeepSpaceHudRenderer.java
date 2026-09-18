@@ -57,6 +57,10 @@ public final class DeepSpaceHudRenderer {
         return enabled;
     }
 
+    public static void setEnabled(boolean value) {
+        enabled = value;
+    }
+
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         while (vsieKeyMappings.KEY_TOGGLE_DEEPSPACE_HUD.consumeClick()) {

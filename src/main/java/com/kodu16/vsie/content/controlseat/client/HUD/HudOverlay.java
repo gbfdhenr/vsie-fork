@@ -3,6 +3,7 @@ package com.kodu16.vsie.content.controlseat.client.HUD;
 import com.kodu16.vsie.content.controlseat.ActiveWeaponHudInfo;
 import com.kodu16.vsie.content.controlseat.block.ControlSeatBlockEntity;
 import com.kodu16.vsie.content.controlseat.client.ControlSeatClientData;
+import com.kodu16.vsie.content.controlseat.client.HUD.HudCrosshair;
 import com.kodu16.vsie.content.controlseat.client.Input.ClientDataManager;
 import com.kodu16.vsie.content.controlseat.entity.ControlSeatMountEntity;
 import com.kodu16.vsie.content.controlseat.functions.ShipAnglePainter;
@@ -113,6 +114,8 @@ public class HudOverlay {
         // Function: heavy turret fire-vector markers stay on the screen overlay so they remain visible even when the player looks away from the seat HUD plane.
         drawHeavyTurretMarkers(gg, controlSeat, data, sw, sh, markerAlpha);
         drawVelocityVectorMarker(gg, data, sw, sh, markerAlpha);
+        // Function: center-screen crosshair for HUD element clicking
+        drawCrosshair(gg, sw, sh);
         RenderSystem.disableBlend();
         return;
     }
@@ -441,5 +444,28 @@ public class HudOverlay {
     }
 
     private record CachedKeyText(String text, int width) {
+    }
+
+    private static void drawCrosshair(GuiGraphics gg, int sw, int sh) {
+        int cx = sw / 2;
+        int cy = sh / 2;
+        int size = 8;
+        int gap = 3;
+        int thickness = 1;
+
+        // Color: white when idle, highlight when hovering clickable element
+        var hovered = HudCrosshair.getHoveredElement();
+        int color = (hovered != null && hovered != HudCrosshair.HudElement.NONE)
+                ? 0xFFFFFFFF // White opaque when hovering
+                : 0x80FFFFFF; // Semi-transparent white when idle
+
+        // Draw crosshair as four lines (gap in center)
+        gg.fill(cx - size, cy, cx - gap, cy + thickness, color); // Left
+        gg.fill(cx + gap, cy, cx + size, cy + thickness, color); // Right
+        gg.fill(cx, cy - size, cx + thickness, cy - gap, color); // Up
+        gg.fill(cx, cy + gap, cx + thickness, cy + size, color); // Down
+
+        // Center dot
+        gg.fill(cx - 1, cy - 1, cx + 1, cy + 1, color);
     }
 }

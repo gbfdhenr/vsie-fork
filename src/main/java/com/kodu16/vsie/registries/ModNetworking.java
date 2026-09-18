@@ -2,6 +2,7 @@ package com.kodu16.vsie.registries;
 
 import com.kodu16.vsie.network.IFF.IFFC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatC2SPacket;
+import com.kodu16.vsie.network.controlseat.C2S.ControlSeatHudClickC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatInputC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatWarpCancelC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatWarpTargetC2SPacket;
@@ -53,6 +54,7 @@ public final class ModNetworking {
         PayloadRegistrar registrar = event.registrar(PROTOCOL);
 
         registrar.playToServer(ControlSeatC2SPacket.TYPE, ControlSeatC2SPacket.STREAM_CODEC, ControlSeatC2SPacket::handle);
+        registrar.playToServer(ControlSeatHudClickC2SPacket.TYPE, ControlSeatHudClickC2SPacket.STREAM_CODEC, ControlSeatHudClickC2SPacket::handle);
         registrar.playToServer(ControlSeatInputC2SPacket.TYPE, ControlSeatInputC2SPacket.STREAM_CODEC, ControlSeatInputC2SPacket::handle);
         registrar.playToServer(ControlSeatWarpTargetC2SPacket.TYPE, ControlSeatWarpTargetC2SPacket.STREAM_CODEC, ControlSeatWarpTargetC2SPacket::handle);
         registrar.playToServer(ControlSeatWarpCancelC2SPacket.TYPE, ControlSeatWarpCancelC2SPacket.STREAM_CODEC, ControlSeatWarpCancelC2SPacket::handle);
