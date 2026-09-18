@@ -25,6 +25,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Optional;
 
@@ -83,7 +84,8 @@ public class HudCrosshair {
 
         // Raycast from camera through screen center
         Vec3 cameraPos = mc.gameRenderer.getMainCamera().getPosition();
-        Vec3 cameraDir = mc.gameRenderer.getMainCamera().getLookVector();
+        Vector3f lookVec = mc.gameRenderer.getMainCamera().getLookVector();
+        Vec3 cameraDir = new Vec3(lookVec.x, lookVec.y, lookVec.z);
 
         // Find intersection with HUD plane
         Optional<Vec3> intersectionOpt = raycastPlane(cameraPos, cameraDir, hudPlane);
@@ -103,7 +105,7 @@ public class HudCrosshair {
         hoveredElement = hitElement;
 
         // Handle left click
-        boolean leftPressed = InputConstants.isKeyDown(mc.getWindow().getWindow(), InputConstants.MOUSE_LEFT);
+        boolean leftPressed = InputConstants.isKeyDown(mc.getWindow().getWindow(), GLFW.GLFW_MOUSE_BUTTON_LEFT);
         if (leftPressed && hitElement != null && System.currentTimeMillis() - lastClickTime > CLICK_COOLDOWN_MS) {
             lastClickTime = System.currentTimeMillis();
             sendHudClickPacket(seatPos, mountEntity.getUUID(), hitElement, data);
@@ -270,7 +272,7 @@ public class HudCrosshair {
      * Send HUD click packet to server.
      */
     private static void sendHudClickPacket(BlockPos seatPos, java.util.UUID seatEntityId, HudElement element, ControlSeatClientData data) {
-        ModNetworking.sendToServer(new ControlSeatHudClickC2SPacket(seatPos, seatEntityId, element.ordinal()));
+        ModNetworking.sendToServer(new ControlSeatHudClickC2SPacket(seatPos, seatEntityId, element.getId()));
     }
 
     // ===== Coordinate helpers (copied from ControlSeatWorldHudRenderer) =====
@@ -348,7 +350,7 @@ public class HudCrosshair {
             this.baseOrdinal = baseOrdinal;
         }
 
-        public int ordinal() {
+        public int getId() {
             return baseOrdinal;
         }
 
