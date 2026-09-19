@@ -3,6 +3,17 @@ package com.kodu16.vsie.content.controlseat.block;
 import com.kodu16.vsie.content.controlseat.AbstractControlSeatBlockEntity;
 import com.kodu16.vsie.content.controlseat.ActiveWeaponHudInfo;
 import com.kodu16.vsie.content.controlseat.Initialize;
+import com.kodu16.vsie.content.controlseat.PeripheralUpdateAggregator;
+import com.kodu16.vsie.content.controlseat.entity.ControlSeatMountEntity;
+import com.kodu16.vsie.content.controlseat.functions.ScanNearByShips;
+import com.kodu16.vsie.content.controlseat.server.ControlSeatServerData;
+import com.kodu16.vsie.content.controlseat.server.ServerShipHandler;
+import com.kodu16.vsie.content.controlseat.client.Input.ClientMouseHandler;
+
+import com.kodu16.vsie.content.controlseat.server.SeatRegistry;
+import com.kodu16.vsie.foundation.BatchedRaycast;
+import com.kodu16.vsie.foundation.ParallelTaskExecutor;
+import com.kodu16.vsie.foundation.ServerShipUtils;
 import com.kodu16.vsie.content.controlseat.entity.ControlSeatMountEntity;
 import com.kodu16.vsie.content.controlseat.functions.ScanNearByShips;
 import com.kodu16.vsie.content.controlseat.functions.ShieldHandler;
@@ -446,11 +457,15 @@ public class ControlSeatBlockEntity extends AbstractControlSeatBlockEntity
 
             updateEnergy();
             this.linkedBatteryPowerAvailableThisTick = this.totalenergyavalible > 0;
+            
+            // 开始射线批处理
+            BatchedRaycast.startBatch();
+            
             if (this.linkedBatteryPowerAvailableThisTick) {
-                updateThruster();
-                updateWeapon();
-                updateTurret();
-                updateShield();
+                // 使用并行聚合器更新所有外设
+                PeripheralUpdateAggregator aggregator = new PeripheralUpdateAggregator(this);
+                aggregator.runAllUpdates();
+                
                 this.capacitorenergy = -this.energyspendpertick;
                 this.totalenergy =100;
                 this.totalenergyavalible = 0;
@@ -475,6 +490,14 @@ public class ControlSeatBlockEntity extends AbstractControlSeatBlockEntity
                 this.capacitorfuel = 0;
                 disableThrusterOutput();
             }
+            
+            // 处理射线批处理结果
+            BatchedRaycast.processBatch(level, (request) -> {
+                if (request.owner instanceof AbstractWeaponBlockEntity weapon) {
+                    weapon.applyBatchedRaycastResult(request, level);
+                }
+            });
+            BatchedRaycast.endBatch();
         }
         else {
             BlockPos pos = getBlockPos();
@@ -516,35 +539,15 @@ public class ControlSeatBlockEntity extends AbstractControlSeatBlockEntity
                 if (!shieldOpenFxPlayed) {
                     shieldOpenFxPlayed = playShieldOpenFx(sublevel, center);
                 }
-                AABB searchBox = ShieldInterception.searchBox(center, controlseatData.shieldradius);
-                Vec3 finalCenter = center;
-                int shieldCost = Math.max(0, (int) Math.ceil(controlseatData.shieldcostperprojectile));
-                final int[] remainingShieldEnergy = {(int) Math.max(0.0D, controlseatData.avalibleshield)};
-                final boolean[] overloadTriggered = {false};
-                level.getEntitiesOfClass(Entity.class, searchBox, ShieldInterception::isCandidate).forEach(entity -> {
-
-                    if (overloadTriggered[0]) return;
-                    ShieldInterception.Hit shieldHit = ShieldInterception.findHit(entity, finalCenter, controlseatData.shieldradius);
-                    if (shieldHit == null) return;
-
-                    entity.discard();
-                    Vec3 hitDir = shieldHit.normal();
-                    Vec3 hitPoint = shieldHit.point();
-                    playShieldHitFx(hitPoint, hitDir);
-
-                    level.playSound(null, hitPoint.x, hitPoint.y, hitPoint.z,
-                            SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(), SoundSource.BLOCKS,
-                            1.0f, 1.2f + level.random.nextFloat() * 0.4f);
-
-                    if (remainingShieldEnergy[0] >= shieldCost) {
-                        SubtractShieldEnergy(shieldCost);
-                        remainingShieldEnergy[0] = Math.max(0, remainingShieldEnergy[0] - shieldCost);
-                    } else {
-                        overloadTriggered[0] = true;
-                        overloadShieldAfterIntercept();
-                    }
-                });
-                if (!overloadTriggered[0]) {
+                
+                // 优化：分帧扫描 + 更精确的实体过滤
+                // 仅在护盾有能量且每 2 tick 扫描一次，减少开销
+                if (controlseatData.avalibleshield > 0 && level.getGameTime() % 2 == 0) {
+                    scanAndInterceptProjectiles(center, controlseatData.shieldradius);
+                }
+                
+                if (controlseatData.avalibleshield > 0 && level.getGameTime() % 2 == 1) {
+                    // 奇数 tick 处理再生
                     RegenerateShieldEnergy((int) controlseatData.shieldregeneratepertick);
                 }
             }
@@ -1905,6 +1908,59 @@ public class ControlSeatBlockEntity extends AbstractControlSeatBlockEntity
         return stack != null
                 && !stack.isEmpty()
                 && stack.getFluid().getFluidType() == vsieFluids.E710.get().getFluidType();
+    }
+
+    /**
+     * 优化后的护盾拦截扫描：
+     * - 仅扫描弹道实体（非生物、有速度）
+     * - 使用更紧凑的搜索盒
+     * - 分帧执行（偶数 tick 拦截，奇数 tick 再生）
+     */
+    private void scanAndInterceptProjectiles(Vec3 center, double radius) {
+        if (level == null || radius <= 0) return;
+        
+        // 更紧凑的搜索范围：半径 + 16 格（足够捕获高速弹道）
+        double extraRange = Math.max(16.0D, radius * 0.5D);
+        AABB searchBox = new AABB(center.x, center.y, center.z, center.x, center.y, center.z)
+                .inflate(radius + extraRange);
+        
+        int shieldCost = Math.max(0, (int) Math.ceil(controlseatData.shieldcostperprojectile));
+        int remainingShieldEnergy = (int) Math.max(0.0D, controlseatData.avalibleshield);
+        boolean overloadTriggered = false;
+        
+        level.getEntitiesOfClass(Entity.class, searchBox, entity -> {
+            // 仅拦截非生物、有速度的实体（弹道）
+            if (entity instanceof net.minecraft.world.entity.LivingEntity) return false;
+            if (entity.getDeltaMovement().length() < 0.25D) return false;
+            if (entity.isRemoved()) return false;
+            return true;
+        }).forEach(entity -> {
+            if (overloadTriggered || remainingShieldEnergy < shieldCost) {
+                overloadTriggered = true;
+                return;
+            }
+            
+            ShieldInterception.Hit shieldHit = ShieldInterception.findHit(entity, center, radius);
+            if (shieldHit == null) return;
+
+            entity.discard();
+            Vec3 hitDir = shieldHit.normal();
+            Vec3 hitPoint = shieldHit.point();
+            playShieldHitFx(hitPoint, hitDir);
+
+            level.playSound(null, hitPoint.x, hitPoint.y, hitPoint.z,
+                    net.minecraft.sounds.SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(), 
+                    net.minecraft.sounds.SoundSource.BLOCKS,
+                    1.0f, 1.2f + level.random.nextFloat() * 0.4f);
+
+            SubtractShieldEnergy(shieldCost);
+            remainingShieldEnergy -= shieldCost;
+            
+            if (remainingShieldEnergy < shieldCost) {
+                overloadTriggered = true;
+                overloadShieldAfterIntercept();
+            }
+        });
     }
 
     @Override

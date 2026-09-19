@@ -4,12 +4,10 @@ package com.kodu16.vsie.content.controlseat.server;
 import com.kodu16.vsie.content.controlseat.entity.ControlSeatMountEntity;
 import com.kodu16.vsie.content.controlseat.functions.ScanNearByShips;
 import com.kodu16.vsie.foundation.ServerShipUtils;
+import com.kodu16.vsie.foundation.SubLevelPhysicsCache;
 import com.kodu16.vsie.foundation.Vec;
 import com.mojang.logging.LogUtils;
-import com.kodu16.vsie.network.controlseat.S2C.ControlSeatInputS2CPacket;
-import com.kodu16.vsie.network.controlseat.S2C.ControlSeatS2CPacket;
-import com.kodu16.vsie.network.controlseat.S2C.ControlSeatStatusS2CPacket;
-import com.kodu16.vsie.network.controlseat.S2C.NearbyShipsS2CPacket;
+import com.kodu16.vsie.network.controlseat.S2C.ControlSeatStateS2CPacket;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
 import dev.ryanhcode.sable.api.physics.mass.MassData;
 import dev.ryanhcode.sable.physics.config.dimension_physics.DimensionPhysicsData;
@@ -29,6 +27,7 @@ import org.joml.Vector3d;
 import com.kodu16.vsie.registries.ModNetworking;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.UUID;
 
 
@@ -83,8 +82,6 @@ public class ServerShipHandler {
     }
 
     private long lastSendMs = 0;
-    private long lastSendStatusMs = 0;
-    private long lastSendInputMs = 0;
     private long lastScanShipsMs = 0;
     private long lastForceDiagMs = 0;
     private String lastForceDiag = "";
@@ -100,6 +97,9 @@ public class ServerShipHandler {
     private final Vector3d previousPlayerPointVelocity = new Vector3d();
     private boolean hasPreviousMotionSample = false;
     private UUID previousGForcePlayerId = null;
+    
+    // 物理缓存
+    private SubLevelPhysicsCache.SubLevelSnapshot physicsSnapshot;
 
     public void getandsendshipdata(ServerSubLevel subLevel,BlockPos pos) {
         if (data.getDirectionForward() == null || data.getDirectionUp() == null || data.getDirectionRight() == null) {
@@ -112,58 +112,63 @@ public class ServerShipHandler {
         Level level = data.level;
         updateStructureCenterTelemetry(subLevel);
         long now = System.currentTimeMillis();
+        
+        // 雷达扫描 (500ms)
+        boolean shouldSendRadar = false;
         if (now - lastScanShipsMs > 500) {
             lastScanShipsMs = now;
             // Function: automatic heavy turrets still need fresh enemy ship targets when no player is seated.
             refreshNearbyShips(pos, level);
-            if (data.getPlayer() != null) {
-                ModNetworking.sendToPlayer(new NearbyShipsS2CPacket(pos, getCurrentSeatEntityId(), data.shipsData), (ServerPlayer) data.getPlayer());
-            }
+            shouldSendRadar = data.getPlayer() != null;
         }
+
         if (data.getPlayer() != null) {
+            ServerPlayer player = (ServerPlayer) data.getPlayer();
+            UUID seatEntityId = getCurrentSeatEntityId();
+
+            // 高频状态 (50ms) - 始终发送
             if (now - lastSendMs > 50) {
                 lastSendMs = now;
-                ControlSeatS2CPacket packet = new ControlSeatS2CPacket(
-                        pos,
-                        getCurrentSeatEntityId(),
-                        Vec.toVector3d(ForwardDirection),
-                        Vec.toVector3d(UpDirection),
-                        data.enemy,
-                        data.ally,
-                        data.lockedenemyslug,
-                        data.getThrottle(),
-                        data.isviewlocked,
-                        data.shipSpeed,
-                        new Vector3d(data.structureCenterWorld),
-                        new Vector3d(data.structureVelocityWorld),
-                        data.seatGForce
-                );
-                ModNetworking.sendToPlayer(packet, (ServerPlayer) data.getPlayer());
             }
-
-            if(now - lastSendStatusMs > 250) {
-                lastSendStatusMs = now;
-                boolean shieldOverloaded = data.isshieldon && data.shieldcooldowntime > 0.0D;
-                ControlSeatStatusS2CPacket packetstatus = new ControlSeatStatusS2CPacket(pos, getCurrentSeatEntityId(),
-                        data.avalibleenergy,data.totalenergystorage,
-                        data.avaliblefuel,data.totalfuelstorage,
-                        data.avalibleE710, data.warpE710CostMb, data.warpE710Insufficient,
-                        data.isshieldon, (int) data.avalibleshield, (int) data.totalshield, shieldOverloaded,
-                        data.isforceassiston, data.istorqueassiston, data.isForceAssistSuppressedByAccelerator,
-                        data.isantigravityon, data.isAutoLevelOn,
-                        data.isWarpPreparing, data.hasPendingWarpTeleport, data.warpTargetName,
-                        data.warpAlignmentControlX, data.warpAlignmentControlY,
-                        data.activeWeaponHudInfos);
-                //LogUtils.getLogger().warn("shieldtotal:"+data.totalshield+"avalible:"+data.avalibleshield);
-                ModNetworking.sendToPlayer(packetstatus, (ServerPlayer) data.getPlayer());
+            
+            // 构建统一状态包
+            ControlSeatStateS2CPacket.Builder builder = new ControlSeatStateS2CPacket.Builder(pos, seatEntityId)
+                    .highFreq(Vec.toVector3d(ForwardDirection), Vec.toVector3d(UpDirection),
+                            data.getThrottle(), data.isviewlocked, data.shipSpeed,
+                            new Vector3d(data.structureCenterWorld),
+                            new Vector3d(data.structureVelocityWorld), data.seatGForce)
+                    .resources(data.avalibleenergy, data.totalenergystorage,
+                            data.avaliblefuel, data.totalfuelstorage,
+                            data.avalibleE710, data.warpE710CostMb, data.warpE710Insufficient)
+                    .shield(data.isshieldon, (int) data.avalibleshield, (int) data.totalshield,
+                            data.isshieldon && data.shieldcooldowntime > 0.0D)
+                    .assists(data.isforceassiston, data.istorqueassiston, data.isForceAssistSuppressedByAccelerator,
+                            data.isantigravityon, data.isAutoLevelOn,
+                            data.isWarpPreparing, data.hasPendingWarpTeleport, data.warpTargetName,
+                            data.warpAlignmentControlX, data.warpAlignmentControlY)
+                    .weapons(data.activeWeaponHudInfos)
+                    .input(data.channelencode);
+            
+            // 添加雷达数据（仅在扫描时）
+            if (shouldSendRadar) {
+                List<ControlSeatStateS2CPacket.RadarShipInfo> radarShips = new ArrayList<>();
+                for (java.util.Map.Entry<String, Object> entry : data.shipsData.entrySet()) {
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> attr = (java.util.Map<String, Object>) entry.getValue();
+                    radarShips.add(new ControlSeatStateS2CPacket.RadarShipInfo(
+                            ((Number) attr.get("id")).longValue(),
+                            (String) attr.get("slug"),
+                            (String) attr.get("dimension"),
+                            (double) attr.get("x"),
+                            (double) attr.get("y"),
+                            (double) attr.get("z"),
+                            ((Number) attr.get("targetIndex")).intValue()
+                    ));
+                }
+                builder.radar(data.enemy, data.ally, data.lockedenemyslug, radarShips);
             }
-
-            if(now - lastSendInputMs > 250) {
-
-                lastSendInputMs = now;
-                ControlSeatInputS2CPacket packet = new ControlSeatInputS2CPacket(pos, getCurrentSeatEntityId(), data.channelencode);
-                ModNetworking.sendToPlayer(packet, (ServerPlayer) data.getPlayer());
-            }
+            
+            ModNetworking.sendToPlayer(builder.build(), player);
         }
     }
 
@@ -239,35 +244,22 @@ public class ServerShipHandler {
             return;
         }
 
-        MassData massData = subLevel.getMassTracker();
-        if (massData == null || massData.isInvalid()) {
+        // 使用物理缓存
+        physicsSnapshot = SubLevelPhysicsCache.get(subLevel);
+        if (!physicsSnapshot.valid) {
             resetControlInput();
-            logForceDiagnostic("invalid_mass", subLevel, massData, hasControlAxes);
+            logForceDiagnostic("invalid_physics_cache", subLevel, null, hasControlAxes);
             return;
         }
-        double rawMass = massData.getMass();
-        Matrix3dc momentOfInertia = massData.getInertiaTensor();
-        double rawAverageInertia = averageInertia(momentOfInertia);
-        if (!isUsableMassProperties(rawMass, momentOfInertia, rawAverageInertia)) {
-            resetControlInput();
-            logForceDiagnostic("unusable_mass_properties", subLevel, massData, hasControlAxes);
-            return;
-        }
-        updateSmoothedMassProperties(rawMass, rawAverageInertia, timeStep);
-        double mass = conservativeMass(rawMass);
-        double averageInertia = conservativeAverageInertia(rawAverageInertia);
-
-        RigidBodyHandle handle = RigidBodyHandle.of(subLevel);
-        if (handle == null || !handle.isValid()) {
-            resetControlInput();
-            logForceDiagnostic("invalid_rigid_body", subLevel, massData, hasControlAxes);
-            return;
-        }
-        Vector3d omega = handle.getAngularVelocity(new Vector3d());
-        Vector3d velocity = handle.getLinearVelocity(new Vector3d());
+        
+        double mass = conservativeMass(physicsSnapshot.mass);
+        double averageInertia = conservativeAverageInertia(physicsSnapshot.averageInertia);
+        
+        Vector3d omega = physicsSnapshot.angularVelocity;
+        Vector3d velocity = physicsSnapshot.linearVelocity;
         if (!isFiniteVector(omega) || !isFiniteVector(velocity)) {
             resetControlInput();
-            logForceDiagnostic("non_finite_velocity", subLevel, massData, hasControlAxes);
+            logForceDiagnostic("non_finite_velocity", subLevel, null, hasControlAxes);
             return;
         }
         double totalForceThrust = Math.max(0.0D, data.thruster_force_strength);
@@ -275,7 +267,7 @@ public class ServerShipHandler {
         if (totalForceThrust <= AXIS_EPSILON && totalTorqueThrust <= AXIS_EPSILON) {
             // Function: no available fueled thruster authority means no ship force or torque, including assists.
             resetControlInput();
-            logForceDiagnostic("no_thruster_authority", subLevel, massData, hasControlAxes);
+            logForceDiagnostic("no_thruster_authority", subLevel, null, hasControlAxes);
             return;
         }
         double linearDampingAlpha = authorityDampingAlpha(
@@ -338,14 +330,14 @@ public class ServerShipHandler {
             if (data.isantigravityon) {
                 Vector3d gravity = DimensionPhysicsData.getGravity(
                         subLevel.getLevel(),
-                        subLevel.logicalPose().position(),
+                        physicsSnapshot.position,
                         new Vector3d()
                 );
                 AntiGravityController.Impulse antiGravityImpulse = AntiGravityController.calculateImpulse(
                         gravity.x, gravity.y, gravity.z,
                         velocity.x, velocity.y, velocity.z,
                         finalforce.x, finalforce.y, finalforce.z,
-                        rawMass, timeStep, !hasManualLinearInput
+                        physicsSnapshot.mass, timeStep, !hasManualLinearInput
                 );
                 // Function: match Sable's exact gravity impulse and hold its axis only while the pilot is not translating.
                 finalforce.add(antiGravityImpulse.x(), antiGravityImpulse.y(), antiGravityImpulse.z());
@@ -354,12 +346,12 @@ public class ServerShipHandler {
                 Vec3 autoLevelImpulse = AutoLevelUtils.calculateWorldAngularImpulse(
                         data,
                         subLevel,
-                        momentOfInertia,
+                        physicsSnapshot.inverseInertiaTensor != null ? physicsSnapshot.inverseInertiaTensor : new org.joml.Matrix3d(),
                         omega,
                         worldXDirection,
                         worldYDirection,
                         worldZDirection,
-                        rawAverageInertia,
+                        physicsSnapshot.averageInertia,
                         averageInertia,
                         deltaOmegaScale
                 );

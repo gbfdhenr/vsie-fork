@@ -6,10 +6,7 @@ import com.kodu16.vsie.network.controlseat.C2S.ControlSeatHudClickC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatInputC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatWarpCancelC2SPacket;
 import com.kodu16.vsie.network.controlseat.C2S.ControlSeatWarpTargetC2SPacket;
-import com.kodu16.vsie.network.controlseat.S2C.ControlSeatInputS2CPacket;
-import com.kodu16.vsie.network.controlseat.S2C.ControlSeatS2CPacket;
-import com.kodu16.vsie.network.controlseat.S2C.ControlSeatStatusS2CPacket;
-import com.kodu16.vsie.network.controlseat.S2C.NearbyShipsS2CPacket;
+import com.kodu16.vsie.network.controlseat.S2C.ControlSeatStateS2CPacket;
 import com.kodu16.vsie.network.aeroie_custom.SelectCustomDeviceC2SPacket;
 import com.kodu16.vsie.network.fuel.SyncThrusterFuelsPacket;
 import com.kodu16.vsie.network.fx.FxBlockS2CPacket;
@@ -75,10 +72,7 @@ public final class ModNetworking {
         registrar.playToServer(EnemyAutocannonSettingsC2SPacket.TYPE, EnemyAutocannonSettingsC2SPacket.STREAM_CODEC, EnemyAutocannonSettingsC2SPacket::handle);
         registrar.playToServer(SelectCustomDeviceC2SPacket.TYPE, SelectCustomDeviceC2SPacket.STREAM_CODEC, SelectCustomDeviceC2SPacket::handle);
 
-        registrar.playToClient(ControlSeatS2CPacket.TYPE, ControlSeatS2CPacket.STREAM_CODEC, ControlSeatS2CPacket::handle);
-        registrar.playToClient(ControlSeatInputS2CPacket.TYPE, ControlSeatInputS2CPacket.STREAM_CODEC, ControlSeatInputS2CPacket::handle);
-        registrar.playToClient(ControlSeatStatusS2CPacket.TYPE, ControlSeatStatusS2CPacket.STREAM_CODEC, ControlSeatStatusS2CPacket::handle);
-        registrar.playToClient(NearbyShipsS2CPacket.TYPE, NearbyShipsS2CPacket.STREAM_CODEC, NearbyShipsS2CPacket::handle);
+        registrar.playToClient(ControlSeatStateS2CPacket.TYPE, ControlSeatStateS2CPacket.STREAM_CODEC, ControlSeatStateS2CPacket::handle);
         registrar.playToClient(FxBlockS2CPacket.TYPE, FxBlockS2CPacket.STREAM_CODEC, FxBlockS2CPacket::handle);
         registrar.playToClient(FxEntityS2CPacket.TYPE, FxEntityS2CPacket.STREAM_CODEC, FxEntityS2CPacket::handle);
         registrar.playToClient(FxPositionS2CPacket.TYPE, FxPositionS2CPacket.STREAM_CODEC, FxPositionS2CPacket::handle);

@@ -2,12 +2,11 @@ package com.kodu16.vsie.content.weapon;
 
 import com.kodu16.vsie.content.cooldown.FireCooldown;
 import com.kodu16.vsie.content.weapon.server.WeaponContainerMenu;
+import com.kodu16.vsie.foundation.BatchedRaycast;
 import com.kodu16.vsie.foundation.LoadedChunkRaycast;
 import com.kodu16.vsie.foundation.RelativeBlockPosNbt;
 import com.kodu16.vsie.foundation.ServerShipUtils;
 import com.mojang.datafixers.util.Pair;
-import com.mojang.logging.LogUtils;
-import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.minecraft.core.BlockPos;
@@ -463,45 +462,63 @@ public abstract class AbstractWeaponBlockEntity extends SmartBlockEntity impleme
         Pair<Vec3, Vec3> raycastPositions = calculateRaycastPositions(currentBlockPos, localDirectionVector, effectiveMaxDistance);
         Vec3 worldFrom = raycastPositions.getFirst();
         Vec3 worldTo = raycastPositions.getSecond();
-        performRaycastFrom(level, worldFrom, worldTo.subtract(worldFrom), effectiveMaxDistance);
-    }
-
-    protected void performRaycastFrom(@Nonnull Level level, @Nonnull Vec3 worldFrom,
-                                      @Nonnull Vec3 worldDirection, float effectiveMaxDistance) {
-        if (!getData().isfiring || worldDirection.lengthSqr() <= 1.0E-8D) {
+        
+        Vec3 worldDirection = worldTo.subtract(worldFrom);
+        if (worldDirection.lengthSqr() <= 1.0E-8D) {
             return;
         }
-        BlockState state = this.getBlockState();
-        Vec3 worldTo = worldFrom.add(worldDirection.normalize().scale(effectiveMaxDistance));
+        
         this.raycastStart = worldFrom;
         this.raycastEnd = worldTo;
         this.raycastDistance = effectiveMaxDistance;
         this.targetpos = worldTo;
-        // Function: misses still use the max-range endpoint; this flag separates visual target from real block hit.
         this.raycastHit = false;
         this.raycastHitBlockPos = BlockPos.ZERO;
 
-        // Perform raycast using world coordinates
+        // 使用批处理射线检测
+        if (BatchedRaycast.isBatchActive()) {
+            BatchedRaycast.submit(BatchedRaycast.createWeaponRaycast(
+                    worldFrom, worldDirection, effectiveMaxDistance, this));
+        } else {
+            // 回退到直接执行
+            performRaycastDirect(level, worldFrom, worldDirection, effectiveMaxDistance);
+        }
+    }
+
+    private void performRaycastDirect(@Nonnull Level level, @Nonnull Vec3 worldFrom,
+                                      @Nonnull Vec3 worldDirection, float effectiveMaxDistance) {
+        Vec3 worldTo = worldFrom.add(worldDirection.normalize().scale(effectiveMaxDistance));
         ClipContext.Fluid clipFluid = ClipContext.Fluid.ANY;
         BlockHitResult hit = LoadedChunkRaycast.clipIgnoringUnloadedChunks(
-                level,
-                worldFrom,
-                worldTo,
-                ClipContext.Block.COLLIDER,
-                clipFluid,
-                CollisionContext.empty()
-        );
+                level, worldFrom, worldTo, ClipContext.Block.COLLIDER, clipFluid, CollisionContext.empty());
+        applyRaycastResult(hit, worldFrom, effectiveMaxDistance);
+        syncRaycastStateIfChanged(level, this.getBlockState());
+    }
 
+    /**
+     * 批处理完成后调用，应用射线检测结果
+     */
+    public void applyBatchedRaycastResult(BatchedRaycast.RaycastRequest request, Level level) {
+        if (request.owner != this) return;
+        BlockHitResult hit = (BlockHitResult) request.hitResult;
+        applyRaycastResult(hit, request.from, request.maxDistance);
+        syncRaycastStateIfChanged(level, this.getBlockState());
+    }
+
+    private void applyRaycastResult(BlockHitResult hit, Vec3 worldFrom, float effectiveMaxDistance) {
         if (hit.getType() == HitResult.Type.BLOCK) {
             Vec3 hitPos = hit.getLocation();
             this.raycastHit = true;
             this.raycastHitBlockPos = hit.getBlockPos();
-            float distance = (float)worldFrom.distanceTo(hitPos);
+            float distance = (float) worldFrom.distanceTo(hitPos);
             this.raycastDistance = Math.min(distance, effectiveMaxDistance);
             this.targetpos = hitPos;
+        } else {
+            this.raycastHit = false;
+            this.raycastHitBlockPos = BlockPos.ZERO;
+            this.raycastDistance = effectiveMaxDistance;
+            this.targetpos = worldFrom.add(hit.getLocation().subtract(worldFrom).normalize().scale(effectiveMaxDistance));
         }
-        // Function: ray weapons can fire rapidly, so only resync the block entity when visible ray state actually changes.
-        syncRaycastStateIfChanged(level, state);
     }
 
     private void syncRaycastStateIfChanged(@Nonnull Level level, @Nonnull BlockState state) {
