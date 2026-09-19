@@ -1,5 +1,6 @@
 package com.kodu16.vsie;
 
+import com.kodu16.vsie.config.VSIEConfig;
 import com.kodu16.vsie.content.screen.server.ServerInfoGetter;
 import com.kodu16.vsie.foundation.VsieModelBakeryLogFilter;
 import com.kodu16.vsie.foundation.projectile.ProjectileCorridorManager;
@@ -18,6 +19,7 @@ import com.simibubi.create.foundation.data.CreateRegistrate;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import software.bernie.geckolib.GeckoLib;
@@ -33,7 +35,7 @@ public class vsie {
     public static boolean debug = false;
     public static final boolean constDebug = false;
 
-    public vsie(IEventBus modBus) {
+    public vsie(IEventBus modBus, ModContainer container) {
         VsieModelBakeryLogFilter.install();
         REGISTRATE.registerEventListeners(modBus);
 
@@ -53,5 +55,7 @@ public class vsie {
         NeoForge.EVENT_BUS.addListener(ServerInfoGetter::onSablePostPhysicsTick);
         NeoForge.EVENT_BUS.addListener(ProjectileCorridorManager::onServerTick);
         NeoForge.EVENT_BUS.addListener(ProjectileCorridorManager::onServerStopped);
+
+        VSIEConfig.register(container);
     }
 }

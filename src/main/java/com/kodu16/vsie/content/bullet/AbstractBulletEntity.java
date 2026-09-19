@@ -1,5 +1,6 @@
 package com.kodu16.vsie.content.bullet;
 
+import com.kodu16.vsie.config.VSIEConfig;
 import com.kodu16.vsie.foundation.ServerShipUtils;
 import com.kodu16.vsie.foundation.projectile.ProjectileCorridorManager;
 import com.kodu16.vsie.foundation.projectile.ProjectileMotionPath;
@@ -51,8 +52,6 @@ public abstract class AbstractBulletEntity extends Projectile {
     private static final EntityDataAccessor<Float> DATA_LAUNCH_DIR_Z =
             SynchedEntityData.defineId(AbstractBulletEntity.class, EntityDataSerializers.FLOAT);
 
-    private static final int DEFAULT_MAX_LIFETIME_TICKS = 20 * 15;
-    private static final int MAX_UNLOADED_CHUNK_WAIT_TICKS = 20;
     private static final double CHUNK_EDGE_EPSILON = 1.0E-6D;
     private static final double CLIENT_HARD_SNAP_DISTANCE_SQR = 48.0D * 48.0D;
     private static final double CLIENT_POSITION_PULL = 0.18D;
@@ -77,6 +76,14 @@ public abstract class AbstractBulletEntity extends Projectile {
     // Function: weapons/turrets can disable terrain damage per shot while preserving entity-hit behaviour.
     private boolean breaksBlocks = true;
     private UUID launchSubLevelId = null;
+
+    private int getMaxLifetimeTicks() {
+        return VSIEConfig.COMMON.maxBulletLifetimeTicks.get();
+    }
+
+    private int getMaxUnloadedChunkWaitTicks() {
+        return VSIEConfig.COMMON.maxUnloadedChunkWaitTicks.get();
+    }
 
     public BulletData getDataBase() {
         return dataBase;
@@ -143,7 +150,7 @@ public abstract class AbstractBulletEntity extends Projectile {
         if (movementEndT <= CHUNK_EDGE_EPSILON) {
             // Keep loading and lifetime state alive, but never touch collision indexes in an unavailable chunk.
             unloadedChunkWaitTicks++;
-            if (unloadedChunkWaitTicks >= MAX_UNLOADED_CHUNK_WAIT_TICKS) {
+            if (unloadedChunkWaitTicks >= getMaxUnloadedChunkWaitTicks()) {
                 this.discard();
                 return;
             }
@@ -189,7 +196,7 @@ public abstract class AbstractBulletEntity extends Projectile {
         if (enteredUnloadedChunk) {
             // Function: keep bullets in entity-ticking chunks until RPL's batched force loader catches up.
             unloadedChunkWaitTicks++;
-            if (unloadedChunkWaitTicks >= MAX_UNLOADED_CHUNK_WAIT_TICKS) {
+            if (unloadedChunkWaitTicks >= getMaxUnloadedChunkWaitTicks()) {
                 this.discard();
                 return;
             }
@@ -364,7 +371,7 @@ public abstract class AbstractBulletEntity extends Projectile {
 
     protected int getMaxLifeTime() {
         // Function: short-lived bullets must clear quickly so missed shots cannot pile up near chunk boundaries.
-        return DEFAULT_MAX_LIFETIME_TICKS;
+        return getMaxLifetimeTicks();
     }
 
     @Override

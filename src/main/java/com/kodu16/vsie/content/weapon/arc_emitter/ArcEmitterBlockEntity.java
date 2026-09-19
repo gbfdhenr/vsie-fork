@@ -27,7 +27,7 @@ public class ArcEmitterBlockEntity extends AbstractWeaponBlockEntity {
 
     @Override
     public float getmaxrange() {
-        return 1024;
+        return 65536;
     }
 
     @Override

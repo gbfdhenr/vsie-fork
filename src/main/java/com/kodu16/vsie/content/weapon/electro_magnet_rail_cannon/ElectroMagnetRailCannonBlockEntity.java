@@ -49,7 +49,7 @@ public class ElectroMagnetRailCannonBlockEntity extends AbstractWeaponBlockEntit
 
     @Override
     public float getmaxrange() {
-        return 512;
+        return 65536;
     }
 
     @Override

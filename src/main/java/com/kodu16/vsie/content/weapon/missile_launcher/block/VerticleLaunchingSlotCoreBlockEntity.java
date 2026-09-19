@@ -50,7 +50,7 @@ public class VerticleLaunchingSlotCoreBlockEntity extends AbstractWeaponBlockEnt
 
     @Override
     public float getmaxrange() {
-        return 512;
+        return 65536;
     }
 
     @Override

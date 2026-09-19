@@ -26,7 +26,7 @@ public class CenixPlasmaCannonBlockEntity extends AbstractWeaponBlockEntity {
 
     @Override
     public float getmaxrange() {
-        return 512;
+        return 65536;
     }
 
     @Override

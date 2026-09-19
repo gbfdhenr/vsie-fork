@@ -25,7 +25,7 @@ public class BasicMissileLauncherBlockEntity extends AbstractMissileLauncherBloc
 
     @Override
     public float getmaxrange() {
-        return 512;
+        return 65536;
     }
 
     @Override
